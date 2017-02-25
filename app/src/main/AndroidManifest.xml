@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="socialcops.aac.video" >
 
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -20,5 +23,4 @@
             android:value="ba1d68003a16b460a6a3464dc41be92271b9a32c" />
     </application>
 
-    <uses-permission android:name="android.permission.INTERNET" />
 </manifest>
