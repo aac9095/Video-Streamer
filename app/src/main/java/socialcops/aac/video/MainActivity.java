@@ -33,7 +33,7 @@ import static socialcops.aac.video.R.id.video;
 
 public class MainActivity extends AppCompatActivity{
 
-    private static final String TAG = "Video";
+    private static final String TAG = "Ayush";
     public static String videoName = "header-img-background_video-1920-480.mp4";
     private String VIDEO_URL = "https://socialcops.com/images/spec/home/header-img-background_video-1920-480.mp4";
     private String proxyUrl = "";
@@ -68,6 +68,14 @@ public class MainActivity extends AppCompatActivity{
 
         videoView = (VideoView) findViewById(video);
         playVideo();
+        if(savedInstanceState != null){
+            int position = savedInstanceState.getInt("position");
+            boolean isPlaying = savedInstanceState.getBoolean("isPlaying?",false);
+            videoView.seekTo(position);
+            if(!isPlaying) {
+                videoView.pause();
+            }
+        }
     }
 
     private void playVideo() {
@@ -92,11 +100,9 @@ public class MainActivity extends AppCompatActivity{
                 String localFilePath = getDir().getPath() + File.separator + videoName;
                 File localFile = new File(localFilePath);
                 copy(cacheFile,localFile);
-                deleteCache(this);
                 Utils.setFilePath(this,localFilePath);
                 proxyUrl = localFilePath;
             } else {
-                deleteCache(this);
                 proxyUrl = Utils.getFilePath(this);
             }
 
@@ -165,33 +171,6 @@ public class MainActivity extends AppCompatActivity{
         out.close();
     }
 
-    public static void deleteCache(Context context) {
-        try {
-            File dir = context.getCacheDir();
-            Log.i(TAG,dir.getPath());
-            deleteDir(dir);
-        } catch (Exception e) {
-            Log.e(TAG,"error",e);
-        }
-    }
-
-    public static boolean deleteDir(File dir) {
-        if (dir != null && dir.isDirectory()) {
-            String[] children = dir.list();
-            for (int i = 0; i < children.length; i++) {
-                boolean success = deleteDir(new File(dir, children[i]));
-                if (!success) {
-                    return false;
-                }
-            }
-            return dir.delete();
-        } else if(dir!= null && dir.isFile()) {
-            return dir.delete();
-        } else {
-            return false;
-        }
-    }
-
     public boolean checkForNetwork(){
         ConnectivityManager cm =
                 (ConnectivityManager) this.getSystemService(Context.CONNECTIVITY_SERVICE);
@@ -205,4 +184,24 @@ public class MainActivity extends AppCompatActivity{
         Toast.makeText(this, getString(R.string.network_toast), Toast.LENGTH_LONG).show();
     }
 
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putInt("position",videoView.getCurrentPosition());
+        outState.putBoolean("isPlaying?",videoView.isPlaying());
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        videoView.pause();
+        pDialog.dismiss();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        videoView.stopPlayback();
+        pDialog.dismiss();
+    }
 }
