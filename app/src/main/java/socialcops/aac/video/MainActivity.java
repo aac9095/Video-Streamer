@@ -1,9 +1,12 @@
 package socialcops.aac.video;
 
 import android.Manifest;
+import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.pm.PackageManager;
 import android.media.MediaPlayer;
-import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.Environment;
 import android.support.v4.app.ActivityCompat;
 import android.support.v4.content.ContextCompat;
@@ -11,32 +14,31 @@ import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.MediaController;
+import android.widget.Toast;
 import android.widget.VideoView;
 
 import com.crashlytics.android.Crashlytics;
+import com.danikula.videocache.HttpProxyCacheServer;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
 import io.fabric.sdk.android.Fabric;
-import okhttp3.ResponseBody;
-import retrofit2.Call;
-import retrofit2.Callback;
-import retrofit2.Response;
-import retrofit2.Retrofit;
-import retrofit2.converter.gson.GsonConverterFactory;
 
 import static socialcops.aac.video.R.id.video;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity{
 
     private static final String TAG = "Video";
-    private String videoName = "header-img-background_video-1920-480.mp4";
-    private final String VIDEO_URL = "https://socialcops.com/images/spec/home/header-img-background_video-1920-480.mp4";
+    public static String videoName = "header-img-background_video-1920-480.mp4";
+    private String VIDEO_URL = "https://socialcops.com/images/spec/home/header-img-background_video-1920-480.mp4";
+    private String proxyUrl = "";
     private VideoView videoView;
+    private ProgressDialog pDialog;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,118 +55,73 @@ public class MainActivity extends AppCompatActivity {
             Log.e(TAG,"Exception",e);
         }
 
+        // Create a progressbar
+        pDialog = new ProgressDialog(this);
+        // Set progressbar title
+        pDialog.setTitle("SocialCops Video");
+        // Set progressbar message
+        pDialog.setMessage("Buffering...");
+        pDialog.setIndeterminate(false);
+        pDialog.setCancelable(false);
+        // Show progressbar
+        pDialog.show();
+
         videoView = (VideoView) findViewById(video);
-        downLoadVideo();
+        playVideo();
+    }
+
+    private void playVideo() {
         try {
-            Uri uri = Uri.parse(VIDEO_URL);
             // Start the MediaController
             MediaController mediacontroller = new MediaController(this);
             mediacontroller.setAnchorView(videoView);
             videoView.setMediaController(mediacontroller);
-            videoView.setVideoURI(uri);
+            // Get the proxy URL from String VideoURL
+            proxyUrl = Utils.getProxyUrl(this);
+            if(!Utils.getIsLocallyAvailable(this) || !check()){
+                if(checkForNetwork()){
+                    HttpProxyCacheServer proxy = App.getProxy(this);
+                    proxyUrl = proxy.getProxyUrl(VIDEO_URL);
+                    Utils.setIsLocallyAvailable(this,true);
+                    Utils.setProxyUrl(this,proxyUrl);
+                } else {
+                    networkToast();
+                }
+            } else if(Utils.getFilePath(this).length()<4) {
+                File cacheFile = new File(proxyUrl.substring(7));
+                String localFilePath = getDir().getPath() + File.separator + videoName;
+                File localFile = new File(localFilePath);
+                copy(cacheFile,localFile);
+                deleteCache(this);
+                Utils.setFilePath(this,localFilePath);
+                proxyUrl = localFilePath;
+            } else {
+                deleteCache(this);
+                proxyUrl = Utils.getFilePath(this);
+            }
+
+            Log.d(TAG,proxyUrl);
 
         } catch (Exception e) {
-            Log.e(TAG, e.getMessage());
-            e.printStackTrace();
+            Log.e(TAG, "Error",e);
         }
 
-        videoView.requestFocus();
-        videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
-            @Override
-            public void onPrepared(MediaPlayer mp) {
-                videoView.start();
-            }
-        });
-    }
-
-    private void downLoadVideo() {
-        Retrofit retrofit = new Retrofit.Builder()
-                .baseUrl("https://socialcops.com")
-                .addConverterFactory(GsonConverterFactory.create())
-                .build();
-
-        VideoDownloadService videoDownloadService = retrofit.create(VideoDownloadService.class);
-
-        Call<ResponseBody> call = videoDownloadService.downloadVideo(VIDEO_URL);
-
-        call.enqueue(new Callback<ResponseBody>() {
-            @Override
-            public void onResponse(Call<ResponseBody> call, Response<ResponseBody> response) {
-                if (response.isSuccessful()) {
-                    Log.d(TAG, "server contacted and has file");
-
-                    boolean writtenToDisk = writeResponseBodyToDisk(response.body());
-
-                    Log.d(TAG, "file download was a success? " + writtenToDisk);
-                } else {
-                    Log.d(TAG, "server contact failed");
+        if (proxyUrl.length()!=0){
+            videoView.setVideoPath(proxyUrl);
+            videoView.requestFocus();
+            videoView.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
+                // Close the progress bar and play the video
+                public void onPrepared(MediaPlayer mp) {
+                    pDialog.dismiss();
+                    videoView.start();
                 }
-            }
-
-            @Override
-            public void onFailure(Call<ResponseBody> call, Throwable t) {
-                Log.e(TAG, "error",t);
-            }
-        });
-    }
-
-    private boolean writeResponseBodyToDisk(ResponseBody body) {
-        try {
-            File videoDir = getDir();
-            if(videoDir == null){
-                return false;
-            }
-            String video = videoDir.getPath() + File.separator + videoName;
-            File videoFile = new File(video);
-
-            InputStream inputStream = null;
-            OutputStream outputStream = null;
-
-            try {
-                byte[] fileReader = new byte[4096];
-
-                long fileSize = body.contentLength();
-                long fileSizeDownloaded = 0;
-
-                inputStream = body.byteStream();
-                outputStream = new FileOutputStream(videoFile);
-
-                while (true) {
-                    int read = inputStream.read(fileReader);
-
-                    if (read == -1) {
-                        break;
-                    }
-
-                    outputStream.write(fileReader, 0, read);
-
-                    fileSizeDownloaded += read;
-
-                    Log.d(TAG, "file download: " + fileSizeDownloaded + " of " + fileSize);
-                }
-
-                outputStream.flush();
-
-                return true;
-            } catch (IOException e) {
-                Log.e(TAG,"error",e);
-                return false;
-            } finally {
-                if (inputStream != null) {
-                    inputStream.close();
-                }
-
-                if (outputStream != null) {
-                    outputStream.close();
-                }
-            }
-        } catch (IOException e) {
-            Log.e(TAG,"error",e);
-            return false;
+            });
+        } else {
+            pDialog.dismiss();
         }
     }
 
-    public static File getDir() {
+    public File getDir() {
         File sdDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
         sdDir =  new File(sdDir, "SocialCops");
         if (!sdDir.exists() && !sdDir.mkdirs()) {
@@ -184,4 +141,68 @@ public class MainActivity extends AppCompatActivity {
                     10);
         }
     }
+
+    private boolean check(){
+        if(proxyUrl.length()<4){
+            return false;
+        } else {
+            File file = new File(proxyUrl.substring(7));
+            return file.isFile();
+        }
+    }
+
+    public void copy(File src, File dst) throws IOException {
+        InputStream in = new FileInputStream(src);
+        OutputStream out = new FileOutputStream(dst);
+
+        // Transfer bytes from in to out
+        byte[] buf = new byte[1024];
+        int len;
+        while ((len = in.read(buf)) > 0) {
+            out.write(buf, 0, len);
+        }
+        in.close();
+        out.close();
+    }
+
+    public static void deleteCache(Context context) {
+        try {
+            File dir = context.getCacheDir();
+            Log.i(TAG,dir.getPath());
+            deleteDir(dir);
+        } catch (Exception e) {
+            Log.e(TAG,"error",e);
+        }
+    }
+
+    public static boolean deleteDir(File dir) {
+        if (dir != null && dir.isDirectory()) {
+            String[] children = dir.list();
+            for (int i = 0; i < children.length; i++) {
+                boolean success = deleteDir(new File(dir, children[i]));
+                if (!success) {
+                    return false;
+                }
+            }
+            return dir.delete();
+        } else if(dir!= null && dir.isFile()) {
+            return dir.delete();
+        } else {
+            return false;
+        }
+    }
+
+    public boolean checkForNetwork(){
+        ConnectivityManager cm =
+                (ConnectivityManager) this.getSystemService(Context.CONNECTIVITY_SERVICE);
+
+        NetworkInfo activeNetwork = cm.getActiveNetworkInfo();
+        return activeNetwork != null &&
+                activeNetwork.isConnectedOrConnecting();
+    }
+
+    public void networkToast(){
+        Toast.makeText(this, getString(R.string.network_toast), Toast.LENGTH_LONG).show();
+    }
+
 }
