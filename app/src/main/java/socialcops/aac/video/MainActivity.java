@@ -28,6 +28,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 import io.fabric.sdk.android.Fabric;
+import okhttp3.ResponseBody;
+import retrofit2.Call;
+import retrofit2.Callback;
+import retrofit2.Response;
+import retrofit2.Retrofit;
+import retrofit2.converter.gson.GsonConverterFactory;
 
 import static socialcops.aac.video.R.id.video;
 
@@ -39,6 +45,7 @@ public class MainActivity extends AppCompatActivity{
     private String proxyUrl = "";
     private VideoView videoView;
     private ProgressDialog pDialog;
+    private boolean fullyCached;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -86,14 +93,17 @@ public class MainActivity extends AppCompatActivity{
             videoView.setMediaController(mediacontroller);
             // Get the proxy URL from String VideoURL
             proxyUrl = Utils.getProxyUrl(this);
-            if(!Utils.getIsLocallyAvailable(this) || !check()){
-                if(checkForNetwork()){
+            fullyCached = Utils.getIsFullyCached(this);
+            if(!Utils.getIsLocallyAvailable(this) || !check() || !fullyCached){
+                if(proxyUrl.length()==0 && !checkForNetwork()){
+                    networkToast();
+                } else {
                     HttpProxyCacheServer proxy = App.getProxy(this);
                     proxyUrl = proxy.getProxyUrl(VIDEO_URL);
                     Utils.setIsLocallyAvailable(this,true);
                     Utils.setProxyUrl(this,proxyUrl);
-                } else {
-                    networkToast();
+                    if(proxyUrl.contains("http"))
+                        downLoadVideo(proxyUrl);
                 }
             } else if(Utils.getFilePath(this).length()<4) {
                 File cacheFile = new File(proxyUrl.substring(7));
@@ -151,6 +161,10 @@ public class MainActivity extends AppCompatActivity{
     private boolean check(){
         if(proxyUrl.length()<4){
             return false;
+        } else if(proxyUrl.contains("http")){
+            String localFilePath = getDir().getPath() + File.separator + videoName;
+            File file = new File(localFilePath);
+            return file.isFile();
         } else {
             File file = new File(proxyUrl.substring(7));
             return file.isFile();
@@ -184,6 +198,90 @@ public class MainActivity extends AppCompatActivity{
         Toast.makeText(this, getString(R.string.network_toast), Toast.LENGTH_LONG).show();
     }
 
+    private void downLoadVideo(String url) {
+        Retrofit retrofit = new Retrofit.Builder()
+                .baseUrl("http://127.0.0.1:35335")
+                .addConverterFactory(GsonConverterFactory.create())
+                .build();
+
+        VideoDownloadService videoDownloadService = retrofit.create(VideoDownloadService.class);
+        Call<ResponseBody> call = videoDownloadService.downloadFileFromLocalServer(url);
+        call.enqueue(new Callback<ResponseBody>() {
+            @Override
+            public void onResponse(Call<ResponseBody> call, Response<ResponseBody> response) {
+                if (response.isSuccessful()) {
+                    Log.d(TAG, "server contacted and has file");
+                    boolean writtenToDisk = writeResponseBodyToDisk(response.body());
+                    if(writtenToDisk){
+                        String localFilePath = getDir().getPath() + File.separator + videoName;
+                        Utils.setFilePath(MainActivity.this,localFilePath);
+                        Utils.setIsLocallyAvailable(MainActivity.this,true);
+                        Utils.setIsFullyCached(MainActivity.this,true);
+                    }
+                    Log.d(TAG, "file download was a success? " + writtenToDisk);
+                } else {
+                    Log.d(TAG, "server contact failed");
+                }
+            }
+
+            @Override
+            public void onFailure(Call<ResponseBody> call, Throwable t) {
+                Log.e(TAG, "error",t);
+            }
+        });
+    }
+
+    private boolean writeResponseBodyToDisk(ResponseBody body) {
+        try {
+            File videoDir = getDir();
+            if(videoDir == null){
+                return false;
+            }
+            String localFilePath = getDir().getPath() + File.separator + videoName;
+            File videoFile = new File(localFilePath);
+
+            InputStream inputStream = null;
+            OutputStream outputStream = null;
+
+            try {
+                byte[] fileReader = new byte[4096];
+
+                long fileSize = body.contentLength();
+                long fileSizeDownloaded = 0;
+
+                inputStream = body.byteStream();
+                outputStream = new FileOutputStream(videoFile);
+
+                while (true) {
+                    int read = inputStream.read(fileReader);
+                    if (read == -1) {
+                        break;
+                    }
+                    outputStream.write(fileReader, 0, read);
+                    fileSizeDownloaded += read;
+                }
+
+                outputStream.flush();
+
+                return true;
+            } catch (IOException e) {
+                Log.e(TAG,"error",e);
+                return false;
+            } finally {
+                if (inputStream != null) {
+                    inputStream.close();
+                }
+
+                if (outputStream != null) {
+                    outputStream.close();
+                }
+            }
+        } catch (IOException e) {
+            Log.e(TAG,"error",e);
+            return false;
+        }
+    }
+
     @Override
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
@@ -196,6 +294,8 @@ public class MainActivity extends AppCompatActivity{
         super.onStop();
         videoView.pause();
         pDialog.dismiss();
+        fullyCached = App.getProxy(this).isCached(VIDEO_URL);
+        Utils.setIsFullyCached(this,fullyCached);
     }
 
     @Override
@@ -203,5 +303,7 @@ public class MainActivity extends AppCompatActivity{
         super.onDestroy();
         videoView.stopPlayback();
         pDialog.dismiss();
+        fullyCached = App.getProxy(this).isCached(VIDEO_URL);
+        Utils.setIsFullyCached(this,fullyCached);
     }
 }

@@ -49,4 +49,18 @@ public class Utils {
                 Context.MODE_PRIVATE);
         return preferences.getString(context.getString(R.string.proxyUrl),"");
     }
+
+    public static void setIsFullyCached(Context context, boolean choice) {
+        SharedPreferences preferences = context.getSharedPreferences(String.valueOf(R.string.app_name),
+                Context.MODE_PRIVATE);
+        SharedPreferences.Editor e = preferences.edit();
+        e.putBoolean(context.getString(R.string.isFullyCached), choice);
+        e.apply();
+    }
+
+    public static boolean getIsFullyCached(Context context) {
+        SharedPreferences preferences = context.getSharedPreferences(String.valueOf(R.string.app_name),
+                Context.MODE_PRIVATE);
+        return preferences.getBoolean(context.getString(R.string.isFullyCached),false);
+    }
 }

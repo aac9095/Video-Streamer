@@ -4,4 +4,5 @@
     <string name="filePath">filePath</string>
     <string name="proxyUrl">proxy</string>
     <string name="network_toast">Uh-oh! This app requires an internet connection</string>
+    <string name="isFullyCached">fullyCached</string>
 </resources>
