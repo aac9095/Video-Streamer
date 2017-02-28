@@ -39,7 +39,7 @@ import static socialcops.aac.video.R.id.video;
 
 public class MainActivity extends AppCompatActivity{
 
-    private static final String TAG = "Ayush";
+    private static final String TAG = "SocialCops";
     public static String videoName = "header-img-background_video-1920-480.mp4";
     private String VIDEO_URL = "https://socialcops.com/images/spec/home/header-img-background_video-1920-480.mp4";
     private String proxyUrl = "";
@@ -90,12 +90,15 @@ public class MainActivity extends AppCompatActivity{
             // Start the MediaController
             MediaController mediacontroller = new MediaController(this);
             mediacontroller.setAnchorView(videoView);
+            videoView.setKeepScreenOn(true);
             videoView.setMediaController(mediacontroller);
             // Get the proxy URL from String VideoURL
             proxyUrl = Utils.getProxyUrl(this);
             fullyCached = Utils.getIsFullyCached(this);
             if(!Utils.getIsLocallyAvailable(this) || !check() || !fullyCached){
-                if(proxyUrl.length()==0 && !checkForNetwork()){
+                if(Utils.getFilePath(this).length()!=0){
+                    proxyUrl = Utils.getFilePath(this);
+                } else if(proxyUrl.length()==0 && !checkForNetwork()){
                     networkToast();
                 } else {
                     HttpProxyCacheServer proxy = App.getProxy(this);
@@ -115,8 +118,6 @@ public class MainActivity extends AppCompatActivity{
             } else {
                 proxyUrl = Utils.getFilePath(this);
             }
-
-            Log.d(TAG,proxyUrl);
 
         } catch (Exception e) {
             Log.e(TAG, "Error",e);
@@ -141,7 +142,6 @@ public class MainActivity extends AppCompatActivity{
         File sdDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES);
         sdDir =  new File(sdDir, "SocialCops");
         if (!sdDir.exists() && !sdDir.mkdirs()) {
-            Log.d(TAG, "Can't create directory to save video.");
             return null;
         } else {
             return sdDir;
@@ -210,7 +210,6 @@ public class MainActivity extends AppCompatActivity{
             @Override
             public void onResponse(Call<ResponseBody> call, Response<ResponseBody> response) {
                 if (response.isSuccessful()) {
-                    Log.d(TAG, "server contacted and has file");
                     boolean writtenToDisk = writeResponseBodyToDisk(response.body());
                     if(writtenToDisk){
                         String localFilePath = getDir().getPath() + File.separator + videoName;
@@ -218,9 +217,8 @@ public class MainActivity extends AppCompatActivity{
                         Utils.setIsLocallyAvailable(MainActivity.this,true);
                         Utils.setIsFullyCached(MainActivity.this,true);
                     }
-                    Log.d(TAG, "file download was a success? " + writtenToDisk);
                 } else {
-                    Log.d(TAG, "server contact failed");
+                    Toast.makeText(MainActivity.this,"Can't connect to server",Toast.LENGTH_SHORT).show();
                 }
             }
 
